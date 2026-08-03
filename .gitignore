@@ -2,6 +2,13 @@
 data/
 output/
 
-# Python caches
+# Large model weights / caches (download/copy locally; not in Git)
+stage1/sam-3d-objects/checkpoints/
+stage1/sam-3d-objects/Ruicheng/
+stage1/sam-3d-objects/.cache/
+
+# Python caches / local build artifacts
 __pycache__/
 *.py[cod]
+*.egg-info/
+build/

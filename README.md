@@ -23,7 +23,8 @@ CHOIR/
 
 ## Python 环境总览
 
-除 `stage1/Dyn_HaMR_new` 外，仓库中的其他代码统一使用 `hd` 环境：
+除 `stage1/Dyn_HaMR_new` 外，仓库中的其他代码统一使用 `hd` 环境
+（含 `sam-3d-objects`；推理请在有 GPU 的 worker 上跑）：
 
 ```text
 /vepfs_default/chanxueyan/lhp/xh/env/hd
@@ -276,6 +277,117 @@ python -m training.train_hoi
 - Taste-Rob 训练/抽样相关绝对路径仍硬编码。
 - `sam2/_C.so` 是平台相关可选 CUDA 扩展，不纳入 Git。
 - `configs/bytetrack.yaml` 相对于当前工作目录解析，请从 `stage1/Yolov8` 启动。
+
+## Stage 1：sam-3d-objects 物体重建
+
+### 功能
+
+在 Yolov8 输出的 RGB 帧和物体 mask 上，用 SAM 3D Objects 重建单帧物体
+mesh / pose，并可选做 silhouette 后优化。CHOIR **正式入口仅**：
+
+```text
+stage1/sam-3d-objects/run_reconstruction.py
+```
+
+默认只处理第 0 帧。
+
+### 输入 / 输出
+
+默认读写仓库根目录 `output/`（与 Yolov8 一致）：
+
+```text
+output/<VIDEO_ID>/
+├── rgbs/0.png          # 必需
+└── obj_masks/0.png     # 必需（RGBA 物体 mask）
+```
+
+主要写出到同一 `output/<VIDEO_ID>/`：
+
+```text
+glb_0.glb
+intrinsics.json
+transform_0.json
+rendered_on_image.png
+env_depths/
+├── depth_0.exr
+├── pc_0.ply
+└── sampled_pc_0.ply
+```
+
+### 环境
+
+CHOIR 统一使用 `hd`（路径见上文「Python 环境总览」）。请在**有 GPU 的
+worker** 上运行；当前登录节点通常无 GPU，无法在此做端到端推理验证。
+
+```bash
+conda activate /vepfs_default/chanxueyan/lhp/xh/env/hd
+cd /vepfs_default/chanxueyan/lhp/xh/code/CHOIR-upload/stage1/sam-3d-objects
+```
+
+`hd` 中已确认可用：`torch`、`pytorch3d`、`kaolin`、`trimesh`、`einops`。
+写 `env_depths/depth_*.exr` 需要 `OpenEXR`；若 worker 上缺失：
+
+```bash
+pip install OpenEXR
+```
+
+### 模型权重
+
+`run_reconstruction.py` 固定读取 `checkpoints/hf/pipeline.yaml`，再加载同目录下各
+ckpt / yaml，以及模块根目录下的 MoGe 与 DINOv2 权重。
+
+本机已从原仓库拷贝（**均不纳入 Git**）。在
+`stage1/sam-3d-objects/` 下的文件结构：
+
+```text
+checkpoints/hf/
+├── pipeline.yaml
+├── ss_generator.yaml
+├── ss_generator.ckpt
+├── ss_decoder.yaml
+├── ss_decoder.ckpt
+├── ss_encoder.yaml
+├── ss_encoder.safetensors
+├── slat_generator.yaml
+├── slat_generator.ckpt
+├── slat_decoder_mesh.yaml
+├── slat_decoder_mesh.ckpt
+├── slat_decoder_mesh.pt
+├── slat_decoder_gs.yaml
+├── slat_decoder_gs.ckpt
+├── slat_decoder_gs_4.yaml
+└── slat_decoder_gs_4.ckpt
+
+Ruicheng/
+└── moge-v2-vitl-normal/
+    └── model.pt
+
+.cache/torch/hub/checkpoints/
+└── dinov2_vitl14_reg4_pretrain.pth
+```
+
+根目录 `.gitignore` 已排除 `checkpoints/`、`Ruicheng/`、`.cache/`。
+
+### 建议测试命令
+
+在有 GPU 的 worker 上，激活 `hd` 并进入模块目录后直接跑：
+
+```bash
+conda activate /vepfs_default/chanxueyan/lhp/xh/env/hd
+cd /vepfs_default/chanxueyan/lhp/xh/code/CHOIR-upload/stage1/sam-3d-objects
+
+CUDA_VISIBLE_DEVICES=0 /vepfs_default/chanxueyan/lhp/xh/env/hd/bin/python -u run_reconstruction.py \
+  --video_id 107407 \
+  --debug
+```
+
+说明：
+
+- `--debug`：单进程，便于排错；省略则按 GPU 数 `mp.spawn`。
+- `--post_optimize`：可选，开启 silhouette 姿态 refinement（默认关闭）。
+- `--video_id`：只跑指定视频；省略则扫整个 `output/`。
+- 默认 `--data_dir` / `--output_dir` = 仓库根 `output/`。
+- 无需额外 `export`（`LIDRA_SKIP_INIT` / `PYTHONPATH` / `TORCH_HOME` / `HF_HOME` 等）。
 
 ## Dyn_HaMR_new 环境配置
 
