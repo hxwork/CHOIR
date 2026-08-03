@@ -1,0 +1,7 @@
+# Local input videos and generated outputs
+data/
+output/
+
+# Python caches
+__pycache__/
+*.py[cod]

@@ -1,0 +1,20 @@
+# Local test and pseudo-label datasets
+data/
+data_hoi/
+
+# Training and inference outputs
+runs/
+runs_hoi/
+output_test_hoi_cases/
+visualization_hoi_results/
+output_tracks/
+output_find_interact_frame/
+test_results_*.log
+prepare_data.log
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Platform-specific SAM2 extension build
+sam2/*.so
