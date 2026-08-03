@@ -6,9 +6,20 @@ output/
 stage1/sam-3d-objects/checkpoints/
 stage1/sam-3d-objects/Ruicheng/
 stage1/sam-3d-objects/.cache/
+stage1/Dyn_HaMR_new/_DATA/
+stage1/Dyn_HaMR_new/assets/
+stage1/Dyn_HaMR_new/third-party/vipe/checkpoints/
+stage1/Dyn_HaMR_new/third-party/vipe/torch_cache/
+stage1/Dyn_HaMR_new/third-party/vipe/hf_cache/
+stage1/Dyn_HaMR_new/third-party/vipe/vipe_results/
+stage1/Dyn_HaMR_new/dyn-hamr/batch_test_*.txt
 
 # Python caches / local build artifacts
 __pycache__/
 *.py[cod]
 *.egg-info/
 build/
+
+# Local HaMeR debug dumps
+stage1/Dyn_HaMR_new/third-party/hamer/debug/
+stage1/Dyn_HaMR_new/third-party/hamer/bbox_trajectories_after_cleaning.png

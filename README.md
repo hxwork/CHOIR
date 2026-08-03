@@ -477,11 +477,11 @@ pip install --no-build-isolation -e .
 "$ENV_ROOT/vipe/bin/vipe" --help
 ```
 
-代码中的批处理脚本默认执行 `conda activate vipe`。如果环境是通过绝对
-prefix 创建的，请将脚本中的激活命令改为：
+批处理在需要时会自动调用 VIPE。默认执行 `conda activate vipe`；若环境是用绝对
+prefix 创建的，请设置：
 
 ```bash
-conda activate /vepfs_default/chanxueyan/lhp/xh/env/vipe
+export CHOIR_VIPE_ENV=/vepfs_default/chanxueyan/lhp/xh/env/vipe
 ```
 
 ## Dyn-HaMR 模型下载
@@ -510,7 +510,7 @@ stage1/Dyn_HaMR_new/
 │   └── vitpose_ckpts/
 │       └── vitpose+_huge/wholebody.pth
 └── third-party/hamer/pretrained_models/
-    └── detector.pt
+    └── detector.pt   # optional relative symlink → ../../../../Yolov8/models/wilor_hand_detector.pt
 ```
 
 ### 自动下载公开模型
@@ -527,9 +527,19 @@ bash scripts/prepare.sh
 - HaMeR 演示模型包，包括 HaMeR 和 ViTPose 权重。
 - DROID-SLAM 权重 `droid.pth`。
 - HMP motion-prior 模型。
-- WiLoR/HaMeR 检测器 `detector.pt`。
 
-脚本中记录的下载地址：
+手部检测器不单独下载：`launch_hamer.py` 默认使用仓库内
+`stage1/Yolov8/models/wilor_hand_detector.pt`（相对路径解析）。
+也可用环境变量覆盖：
+
+```bash
+export CHOIR_HAMER_YOLO_MODEL=/path/to/wilor_hand_detector.pt
+```
+
+`pretrained_models/detector.pt` 仅为可选相对符号链接；正式运行以
+`--yolo_model` 传入的路径为准。
+
+脚本中记录的其余下载地址：
 
 ```text
 HaMeR:
@@ -540,13 +550,7 @@ https://drive.google.com/uc?id=1VD1vGhl_NPzy8mza4Fx6vvqFpnlzZ86L
 
 HMP:
 https://drive.google.com/uc?id=1LfMugcIM5WfenPkInzJGm5IEwCUK_AMy
-
-WiLoR detector:
-https://huggingface.co/spaces/rolpotamias/WiLoR/resolve/main/pretrained_models/detector.pt
 ```
-
-`detector.OnlyH.pt` 和 `detector.withHOI.pt` 是额外的定制检测器，不属于
-上游自动下载内容；没有这些文件时可先使用公开的 `detector.pt`。
 
 ### 手动准备 MANO
 
@@ -578,54 +582,82 @@ VIPE 第一次推理时会自动从 PyTorch Hub 和 Hugging Face 下载依赖模
 cd "$DYNHAMR_ROOT/third-party/vipe"
 export TORCH_HOME="$PWD/torch_cache"
 export HF_HOME="$PWD/hf_cache"
-
-"$ENV_ROOT/vipe/bin/vipe" infer /path/to/video.mp4 \
-  --output /path/to/vipe_results
 ```
 
-本地运行后通常会生成：
+本地缓存通常落在：
 
 ```text
 third-party/vipe/
 ├── checkpoints/
 ├── torch_cache/
-├── hf_cache/
-└── vipe_results/
+└── hf_cache/
 ```
 
-这些目录可能占用数 GB，不应提交到 Git。显存不足时可使用：
+这些目录可能占用数 GB，不应提交到 Git。正式流水线把 VIPE 推理结果写到
+`output/<VIDEO_ID>/dynhamr/vipe_results/`，而不是 `third-party/vipe/vipe_results/`。
+
+`batch_test_videos.py` 调用 VIPE 时会自动设置：
+
+```bash
+export TORCH_HOME="$DYNHAMR_ROOT/third-party/vipe/torch_cache"
+export HF_HOME="$DYNHAMR_ROOT/third-party/vipe/hf_cache"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+```
+
+请先在本机跑通一次联网下载（或从已有机器拷贝上述缓存目录），之后即可离线复用。
+不要设置 `TRANSFORMERS_CACHE` 覆盖 `HF_HOME`，否则会找不到
+`hub/models--*` 布局下的权重。
+
+显存不足时可手动：
 
 ```bash
 "$ENV_ROOT/vipe/bin/vipe" infer /path/to/video.mp4 \
   --pipeline no_vda \
-  --output /path/to/vipe_results
+  --output /path/to/output/<VIDEO_ID>/dynhamr/vipe_results
 ```
 
 ## 运行 Dyn-HaMR
 
-先用 `vipe` 环境计算相机信息，再切换到 `dynhamr` 环境运行优化：
+本模块在 CHOIR-upload 仓库内自包含：代码、`_DATA`、`third-party/{vipe,hamer,DROID-SLAM}`
+均位于 `stage1/Dyn_HaMR_new/`；手检测权重来自同仓
+`stage1/Yolov8/models/wilor_hand_detector.pt`。运行时只需外部 `dynhamr` / `vipe`
+conda 环境。
 
-```bash
-# 1. VIPE 相机估计
-conda activate "$ENV_ROOT/vipe"
-cd "$DYNHAMR_ROOT/third-party/vipe"
-export TORCH_HOME="$PWD/torch_cache"
-export HF_HOME="$PWD/hf_cache"
-vipe infer /path/to/video.mp4 --output /path/to/vipe_results
+数据与结果约定：
 
-# 2. Dyn-HaMR 优化
-conda activate "$ENV_ROOT/dynhamr"
-cd "$DYNHAMR_ROOT/dyn-hamr"
-python run_opt.py data=video_vipe run_opt=True \
-  data.seq=<VIDEO_ID> \
-  is_static=False
-
-# 3. 可视化
-python run_vis.py --log_root <LOG_ROOT>
+```text
+output/<VIDEO_ID>/<VIDEO_ID>.mp4          # 输入（Yolov8 等上游写出）
+output/<VIDEO_ID>/dynhamr/                # Hydra / 抽帧 / VIPE / HaMeR / 优化中间结果
+output/<VIDEO_ID>/mano_params/            # 导出的 MANO 参数
+output/<VIDEO_ID>/hand_meshes/            # 导出的手部 mesh
 ```
 
-运行前需修改 `dyn-hamr/confs/data/video_vipe.yaml` 中的数据根目录、
-视频路径和 `vipe_root`。不要保留其他机器上的绝对路径。
+正式入口仅为 `dyn-hamr/batch_test_videos.py`（内部调用 `run_opt.py`，必要时自动跑 VIPE）。
+批处理日志写在入口脚本同目录（不进 `output/<VIDEO_ID>/`）：
+
+```text
+stage1/Dyn_HaMR_new/dyn-hamr/batch_test_errors_*.txt
+stage1/Dyn_HaMR_new/dyn-hamr/batch_test_results_*.txt
+```
+
+```bash
+# 可选：VIPE 环境不是名为 vipe 时
+# export CHOIR_VIPE_ENV=/path/to/env/vipe
+
+conda activate "$ENV_ROOT/dynhamr"
+cd "$DYNHAMR_ROOT/dyn-hamr"
+python batch_test_videos.py --video_id <VIDEO_ID> --gpus 0
+
+# 可视化
+python run_vis.py --log_root ../../../output/<VIDEO_ID>/dynhamr
+```
+
+常用参数：
+
+- `--video_id`：只跑指定视频；可传多个；省略则扫描 `output/` 下所有 `<id>/<id>.mp4`。
+- `--gpus`：GPU id 列表。
+- `--video_dir`：输出根目录，默认仓库根 `output/`。
 
 ## 不纳入 Git 的内容
 
@@ -637,13 +669,17 @@ third-party/vipe/checkpoints/
 third-party/vipe/torch_cache/
 third-party/vipe/hf_cache/
 third-party/vipe/vipe_results/
-outputs/
-logs/
+output/
+data/
+**/__pycache__/
+**/*.egg-info/
 *.pt
 *.pth
 *.ckpt
 *.safetensors
 *.pkl
+batch_test_errors_*.txt
+batch_test_results_*.txt
 ```
 
 请同时遵守 Dyn-HaMR、HaMeR、VIPE、MANO 和各模型文件各自的许可证。
