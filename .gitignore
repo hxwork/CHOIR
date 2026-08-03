@@ -13,6 +13,12 @@ stage1/Dyn_HaMR_new/third-party/vipe/torch_cache/
 stage1/Dyn_HaMR_new/third-party/vipe/hf_cache/
 stage1/Dyn_HaMR_new/third-party/vipe/vipe_results/
 stage1/Dyn_HaMR_new/dyn-hamr/batch_test_*.txt
+stage2/DexGraspNet_table/meshdata/
+stage2/DexGraspNet_table/data/
+GraspFlowMatching/results/
+GraspFlowMatching/samples*/
+GraspFlowMatching/**/build/
+GraspFlowMatching/**/*.egg-info/
 
 # Python caches / local build artifacts
 __pycache__/

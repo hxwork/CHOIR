@@ -659,6 +659,147 @@ python run_vis.py --log_root ../../../output/<VIDEO_ID>/dynhamr
 - `--gpus`：GPU id 列表。
 - `--video_dir`：输出根目录，默认仓库根 `output/`。
 
+## Stage 2：DexGraspNet_table 抓取训练数据
+
+模块路径：`stage2/DexGraspNet_table/`。使用与其它非 Dyn-HaMR 模块相同的 `hd` 环境。
+
+口径：
+
+| 用途 | 入口 | 说明 |
+|---|---|---|
+| 训练抓取数据生成 | `grasp_generation/main_prep_data.py` | 桌面抓取退火优化，写出 `grasp_data/` |
+| 可选后处理筛选 | `grasp_generation/validate_grasping_pose.py` | PyBullet 稳定性过滤 |
+| mesh 准备（inference / 上游） | `prepare_meshdata.py` | 从 HOI mesh 打包 `meshdata/`，**不是**训练抓取入口 |
+
+### 目录约定
+
+```text
+stage2/DexGraspNet_table/meshdata/
+├── sam3d/<VIDEO_ID>/
+│   ├── decomposed.obj          # 必需
+│   ├── init_obj_poses.npy      # 必需（可用 scripts/generate_object_pose_mine.py 生成）
+│   ├── scale.json              # 可选
+│   ├── obj_points_*.ply        # 可选（prepare_meshdata FPS 写出）
+│   └── grasp_data/             # main_prep_data 写出
+└── dexgraspnet/<OBJECT_ID>/    # 可选的另一数据源
+```
+
+`meshdata/` 与实验日志默认在模块内，不提交到 Git。
+
+### mesh 准备（可选，inference / 上游）
+
+当源数据在 `output/<VIDEO_ID>/optimized_hoi_seq/`（含 `obj_canonical.obj`、`obj_00000.json`）时：
+
+```bash
+conda activate /vepfs_default/chanxueyan/lhp/xh/env/hd
+cd stage2/DexGraspNet_table
+python prepare_meshdata.py --video_id <VIDEO_ID>
+# 默认 --source_dir 为仓库根 output/，--data_root 为本模块 meshdata/
+```
+
+若缺少 `init_obj_poses.npy`：
+
+```bash
+cd grasp_generation
+python scripts/generate_object_pose_mine.py --data_root_path ../meshdata
+```
+
+### 生成抓取训练候选
+
+```bash
+conda activate /vepfs_default/chanxueyan/lhp/xh/env/hd
+cd stage2/DexGraspNet_table/grasp_generation
+python main_prep_data.py --object_code_list <VIDEO_ID>
+# 默认 --data_root=../meshdata ，日志在 ../data/experiments/<name>/
+```
+
+依赖本地 `mano/`（含 MANO / contact 等，需按许可自行准备）以及 `manotorch`、`torchsdf`、`pytorch3d` 等。
+
+### PyBullet 后处理筛选（可选）
+
+```bash
+cd stage2/DexGraspNet_table/grasp_generation
+python validate_grasping_pose.py \
+  --object_dir ../meshdata/sam3d/<VIDEO_ID> \
+  --batch
+```
+
+## GraspFlowMatching（Stage 2 模型）
+
+模块路径：`GraspFlowMatching/`。训练与推理都在此目录；使用 `hd` 环境。
+
+| 用途 | 入口 |
+|---|---|
+| 训练 | `train_cam_ray.py` |
+| 推理 | `sample_cam_ray_ddp.py` |
+| 接触图（可选） | `compute_contact_map_per_frame.py` / `compute_contact_map_render.py` |
+
+共享路径见 `data_layout.py`：默认 `meshdata` → `stage2/DexGraspNet_table/meshdata`，推理源 → 仓库根 `output/`，MANO → `stage2/.../mano`。
+
+### 预训练权重
+
+发布包内本地权重目录（已被 `.gitignore` 忽略，不会进 Git）：
+
+```text
+GraspFlowMatching/results/050-Linear-velocity-None/checkpoints/0040000.pt
+```
+
+推理请指向该 checkpoint；自行训练则会写到 `results/<exp>/checkpoints/`。
+
+### 训练
+
+依赖 Stage2 生成的：
+
+```text
+stage2/DexGraspNet_table/meshdata/{sam3d|dexgraspnet}/<id>/
+├── decomposed.obj
+├── obj_points_10000.ply
+└── grasp_data/*.json
+```
+
+```bash
+conda activate /vepfs_default/chanxueyan/lhp/xh/env/hd
+cd GraspFlowMatching
+torchrun --nproc_per_node=<N> train_cam_ray.py --results_dir results
+```
+
+### 推理
+
+默认从 `output/<VIDEO_ID>/` 读取 HOI 序列（`optimized_hoi_seq` 或 `optimized_hoi_init_seq`），并从
+`stage2/.../meshdata/sam3d/<VIDEO_ID>/` 读取规范物体 mesh/点云。可先跑本模块或 Stage2 的
+`prepare_meshdata.py`。
+
+```bash
+cd GraspFlowMatching
+torchrun --nproc_per_node=<N> sample_cam_ray_ddp.py ODE \
+  --ckpt results/050-Linear-velocity-None/checkpoints/0040000.pt \
+  --output_dir samples_ddp \
+  --video_id <VIDEO_ID>
+```
+
+`sample_cam_ray_ddp.py --output_dir samples_ddp` 会写出：
+
+```text
+samples_ddp/<VIDEO_ID>/                  # 采样摘要等
+samples_ddp_contact_map/<VIDEO_ID>/      # hand_*.ply / obj_*.ply（接触图输入）
+samples_ddp_render/<VIDEO_ID>/<frame>/   # 渲染用分帧目录
+output/<VIDEO_ID>/grasp_correction/camera_ray_depth_offset.json
+```
+
+### 接触图后处理（可选）
+
+`--samples_dir` 须与推理时的 `--output_dir` 一致（默认 `samples_ddp`）：
+
+```bash
+# 逐帧 JSON（主 fitting 读取）
+python compute_contact_map_per_frame.py --samples_dir samples_ddp --video_id <VIDEO_ID>
+# -> output/<VIDEO_ID>/grasp_correction/contact_map_per_frame.json
+
+# 写入 render 分帧目录
+python compute_contact_map_render.py --samples_dir samples_ddp --video_id <VIDEO_ID>
+# -> samples_ddp_render/<VIDEO_ID>/<frame>/contact_map.json
+```
+
 ## 不纳入 Git 的内容
 
 至少应排除：
@@ -669,6 +810,8 @@ third-party/vipe/checkpoints/
 third-party/vipe/torch_cache/
 third-party/vipe/hf_cache/
 third-party/vipe/vipe_results/
+stage2/DexGraspNet_table/meshdata/
+stage2/DexGraspNet_table/data/
 output/
 data/
 **/__pycache__/
@@ -682,4 +825,4 @@ batch_test_errors_*.txt
 batch_test_results_*.txt
 ```
 
-请同时遵守 Dyn-HaMR、HaMeR、VIPE、MANO 和各模型文件各自的许可证。
+请同时遵守 Dyn-HaMR、HaMeR、VIPE、MANO、DexGraspNet 和各模型文件各自的许可证。
