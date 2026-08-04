@@ -3,22 +3,28 @@ data/
 output/
 
 # Large model weights / caches (download/copy locally; not in Git)
-stage1/sam-3d-objects/checkpoints/
-stage1/sam-3d-objects/Ruicheng/
-stage1/sam-3d-objects/.cache/
-stage1/Dyn_HaMR_new/_DATA/
-stage1/Dyn_HaMR_new/assets/
-stage1/Dyn_HaMR_new/third-party/vipe/checkpoints/
-stage1/Dyn_HaMR_new/third-party/vipe/torch_cache/
-stage1/Dyn_HaMR_new/third-party/vipe/hf_cache/
-stage1/Dyn_HaMR_new/third-party/vipe/vipe_results/
-stage1/Dyn_HaMR_new/dyn-hamr/batch_test_*.txt
-stage2/DexGraspNet_table/meshdata/
-stage2/DexGraspNet_table/data/
-GraspFlowMatching/results/
-GraspFlowMatching/samples*/
-GraspFlowMatching/**/build/
-GraspFlowMatching/**/*.egg-info/
+stage1_preprocess/sam-3d-objects/checkpoints/
+stage1_preprocess/sam-3d-objects/Ruicheng/
+stage1_preprocess/sam-3d-objects/.cache/
+stage1_preprocess/Yolov8/sam2/checkpoints/
+stage1_preprocess/Dyn_HaMR_new/_DATA/
+stage1_preprocess/Dyn_HaMR_new/assets/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/checkpoints/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/torch_cache/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/hf_cache/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/vipe_results/
+stage1_preprocess/Dyn_HaMR_new/dyn-hamr/batch_test_*.txt
+stage2_grasp_correction/DexGraspNet_table/meshdata/
+stage2_grasp_correction/DexGraspNet_table/data/
+stage2_grasp_correction/GraspFlowMatching/results/
+stage2_grasp_correction/GraspFlowMatching/samples*/
+stage2_grasp_correction/GraspFlowMatching/**/build/
+stage2_grasp_correction/GraspFlowMatching/**/*.egg-info/
+stage3_temporal_optimization/diffusion-vas/checkpoints/
+stage3_temporal_optimization/diffusion-vas/input_data/
+stage3_temporal_optimization/diffusion-vas/outputs/
+stage3_temporal_optimization/diffusion-vas/logs/
+stage3_temporal_optimization/diffusion-vas/rendering_for_paper/
 
 # Python caches / local build artifacts
 __pycache__/
@@ -27,5 +33,5 @@ __pycache__/
 build/
 
 # Local HaMeR debug dumps
-stage1/Dyn_HaMR_new/third-party/hamer/debug/
-stage1/Dyn_HaMR_new/third-party/hamer/bbox_trajectories_after_cleaning.png
+stage1_preprocess/Dyn_HaMR_new/third-party/hamer/debug/
+stage1_preprocess/Dyn_HaMR_new/third-party/hamer/bbox_trajectories_after_cleaning.png

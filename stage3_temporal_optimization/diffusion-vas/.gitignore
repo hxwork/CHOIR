@@ -1,0 +1,11 @@
+.DS_Store
+.idea
+.vscode
+__pycache__/
+assets
+checkpoints
+*.md
+co-tracker
+*.png
+demo_data
+debug_output
