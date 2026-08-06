@@ -1,7 +1,5 @@
 <h1 align="center">CHOIR: Contact-aware 4D Hand-Object Interaction Reconstruction</h1>
 
-<h3 align="center">ACM Transactions on Graphics (SIGGRAPH Asia 2026 Journal Track), conditionally accepted</h3>
-
 <h4 align="center">
   Hao Xu<sup>1</sup>, Yilin Liu<sup>2</sup>, Yinqiao Wang<sup>1</sup>,
   Chi-Wing Fu<sup>1</sup>, Niloy J. Mitra<sup>2,3</sup>
@@ -25,6 +23,8 @@
 
 This is the official implementation of
 [CHOIR: Contact-aware 4D Hand-Object Interaction Reconstruction](https://arxiv.org/abs/2605.20992).
+The paper is conditionally accepted to ACM Transactions on Graphics
+(SIGGRAPH Asia 2026 Journal Track).
 
 CHOIR reconstructs 4D hand-object interaction (HOI) from a monocular RGB
 video, including hand motion, object geometry, object pose trajectory, and a
