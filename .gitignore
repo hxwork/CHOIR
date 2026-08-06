@@ -1,0 +1,63 @@
+# Local input videos and generated outputs
+data/
+output/
+rendering/
+
+# Large model weights / caches (download/copy locally; not in Git)
+stage1_preprocess/Yolov8/models/*.pt
+stage1_preprocess/sam-3d-objects/checkpoints/
+stage1_preprocess/sam-3d-objects/Ruicheng/
+stage1_preprocess/sam-3d-objects/.cache/
+stage1_preprocess/Yolov8/sam2/checkpoints/
+stage1_preprocess/Dyn_HaMR_new/_DATA/
+stage1_preprocess/Dyn_HaMR_new/assets/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/checkpoints/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/torch_cache/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/hf_cache/
+stage1_preprocess/Dyn_HaMR_new/third-party/vipe/vipe_results/
+stage1_preprocess/Dyn_HaMR_new/dyn-hamr/batch_test_*.txt
+stage2_grasp_correction/DexGraspNet_table/meshdata/
+stage2_grasp_correction/DexGraspNet_table/data/
+stage2_grasp_correction/GraspFlowMatching/results/
+stage2_grasp_correction/GraspFlowMatching/samples*/
+stage2_grasp_correction/GraspFlowMatching/**/build/
+stage2_grasp_correction/GraspFlowMatching/**/*.egg-info/
+stage3_temporal_optimization/diffusion-vas/checkpoints/
+stage3_temporal_optimization/diffusion-vas/input_data/
+stage3_temporal_optimization/diffusion-vas/outputs/
+metrics/
+stage3_temporal_optimization/diffusion-vas/logs/
+stage3_temporal_optimization/diffusion-vas/rendering_for_paper/
+stage3_temporal_optimization/diffusion-vas/debug_output/
+stage3_temporal_optimization/diffusion-vas/pack_data_for_baselines/
+stage3_temporal_optimization/diffusion-vas/co-tracker/
+stage3_temporal_optimization/diffusion-vas/sam2/
+stage3_temporal_optimization/diffusion-vas/**/.cache/
+stage3_temporal_optimization/diffusion-vas/**/stage3_checkpoint.pt
+stage3_temporal_optimization/diffusion-vas/**/*.so
+
+# Python caches / local build artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+build/
+
+# Local HaMeR debug dumps
+stage1_preprocess/Dyn_HaMR_new/third-party/hamer/debug/
+stage1_preprocess/Dyn_HaMR_new/third-party/hamer/bbox_trajectories_after_cleaning.png
+
+# Packed demo data release artifact
+choir_demo_data.zip
+
+# Local portable tooling (e.g. gh binary)
+.tools/
+
+choir_release_assets.zip
+
+# Licensed MANO assets (download separately)
+**/MANO_*.pkl
+stage2_grasp_correction/DexGraspNet_table/grasp_generation/mano/models/
+
+# Generated visualization dumps
+stage1_preprocess/sam-3d-objects/vis_htmls/

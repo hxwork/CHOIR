@@ -1,0 +1,13 @@
+__pycache__/
+checkpoints/
+build/
+dist/
+doc/
+*.egg-info/
+results/
+samples/
+samples_ddp*/
+*_contact_map/
+*_render/
+vis_results/
+debug_viz/

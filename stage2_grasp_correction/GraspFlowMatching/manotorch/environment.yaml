@@ -1,0 +1,28 @@
+name: manotorch
+
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python
+  - pip
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cudatoolkit
+  - numpy
+  - pyyaml
+  - tqdm
+  - git
+  - pip:
+      - git+https://github.com/mattloper/chumpy.git
+      - cython
+      - scipy
+      - trimesh
+      - pyvista
+      - open3d
+      - opencv-python
+      - opencv-contrib-python
+      - deprecation
