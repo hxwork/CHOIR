@@ -1,4 +1,4 @@
-<h1 align="center">CHOIR: Contact-aware 4D Hand-Object Interaction Reconstruction</h1>
+<h1 align="center">Open-CHOIR: Open-World Contact-Aware 4D Hand–Object Interaction Reconstruction</h1>
 
 <h4 align="center">
   Hao Xu<sup>1</sup>, Yilin Liu<sup>2</sup>, Yinqiao Wang<sup>1</sup>,
@@ -22,7 +22,7 @@
 </p>
 
 This is the official implementation of
-[CHOIR: Contact-aware 4D Hand-Object Interaction Reconstruction](https://arxiv.org/abs/2605.20992).
+[Open-CHOIR: Open-World Contact-Aware 4D Hand–Object Interaction Reconstruction](https://arxiv.org/abs/2605.20992).
 The paper is conditionally accepted to ACM Transactions on Graphics
 (SIGGRAPH Asia 2026 Journal Track).
 
@@ -749,7 +749,7 @@ If you use this code, please cite:
 
 ```bibtex
 @article{xu2026choir,
-  title   = {CHOIR: Contact-aware 4D Hand-Object Interaction Reconstruction},
+  title   = {Open-CHOIR: Open-World Contact-Aware 4D Hand–Object Interaction Reconstruction},
   author  = {Xu, Hao and Liu, Yilin and Wang, Yinqiao and Fu, Chi-Wing and Mitra, Niloy J.},
   journal = {ACM Transactions on Graphics (SIGGRAPH Asia Journal Track)},
   year    = {2026},
