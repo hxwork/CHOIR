@@ -23,7 +23,7 @@
 
 This is the official implementation of
 [Open-CHOIR: Open-World Contact-Aware 4D Hand–Object Interaction Reconstruction](https://arxiv.org/abs/2605.20992).
-The paper is conditionally accepted to ACM Transactions on Graphics
+The paper has been accepted for publication in ACM Transactions on Graphics
 (SIGGRAPH Asia 2026 Journal Track).
 
 CHOIR reconstructs 4D hand-object interaction (HOI) from a monocular RGB
