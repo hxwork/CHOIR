@@ -1,26 +1,23 @@
-import os
 import glob
+import json
+import os
 import typing
 
 import imageio
 import numpy as np
-import json
-
 import torch
 import torch.nn.functional as F
+from body_model import MANO_JOINTS
 from torch.utils.data import Dataset
 
-from body_model import MANO_JOINTS
 assert len(MANO_JOINTS) == 16
 import time
 
-from util.logger import Logger
 from geometry.camera import invert_camera
+from util.logger import Logger
 
-from .tools import read_keypoints, read_mask_path, load_mano_preds, load_keypoints_with_interp
+from .tools import (load_keypoints_with_interp, load_mano_preds, read_keypoints, read_mask_path)
 from .vidproc import preprocess_cameras, preprocess_frames, preprocess_tracks
-
-
 """
 Define data-related constants
 """
@@ -30,7 +27,8 @@ Define data-related constants
 SHOT_PAD = 0
 MIN_SEQ_LEN = 10
 MAX_NUM_TRACKS = 12
-MIN_TRACK_LEN = 60
+# MIN_TRACK_LEN = 60
+MIN_TRACK_LEN = 10
 MIN_KEYP_CONF = 0.4
 
 
@@ -81,10 +79,11 @@ def check_data_sources(args, cfg):
     c = time.time()
     preprocess_cameras(args, overwrite=args.get("overwrite_cams", False))
     d = time.time()
-    print('frame, hand track, slam camera: ', b-a, c-b, d-c)
+    print('frame, hand track, slam camera: ', b - a, c - b, d - c)
 
 
 class MultiPeopleDataset(Dataset):
+
     def __init__(
         self,
         data_sources: typing.Dict,
@@ -103,9 +102,7 @@ class MultiPeopleDataset(Dataset):
         self.split_cameras = split_cameras
 
         # select only images in the desired shot
-        img_files, _ = get_shot_img_files(
-            self.data_sources["shots"], shot_idx, pad_shot
-        )
+        img_files, _ = get_shot_img_files(self.data_sources["shots"], shot_idx, pad_shot)
         end_idx = end_idx if end_idx > 0 else len(img_files)
         self.data_start, self.data_end = start_idx, end_idx
         img_files = img_files[start_idx:end_idx]
@@ -127,17 +124,12 @@ class MultiPeopleDataset(Dataset):
                 n_tracks = int(tid_spec.split("-")[1])
             # get the longest tracks in the selected shot
             track_ids = sorted(os.listdir(track_root))
-            track_paths = [
-                [f"{track_root}/{tid}/{name}_keypoints.json" for name in self.img_names]
-                for tid in track_ids
-            ]
-            track_lens = [
-                len(list(filter(os.path.isfile, paths))) for paths in track_paths
-            ]
+            track_paths = [[f"{track_root}/{tid}/{name}_keypoints.json" for name in self.img_names] for tid in track_ids]
+            track_lens = [len(list(filter(os.path.isfile, paths))) for paths in track_paths]
             print("raw TRACK IDS and LENGTHS", track_ids, track_lens)
             track_ids = [
                 track_ids[i]
-                for i in range(len(track_lens))# np.argsort(track_lens)[::-1]
+                for i in range(len(track_lens))  # np.argsort(track_lens)[::-1]
                 if track_lens[i] > MIN_TRACK_LEN
             ]
             print("TRACK LENGTHS", track_ids, track_lens)
@@ -223,9 +215,7 @@ class MultiPeopleDataset(Dataset):
             data_out["vis_mask"].append(vis_mask)
 
             # load 2d keypoints for visible frames with interpolation
-            kp_paths = [
-                f"{self.track_dirs[i]}/{x}_keypoints.json" for x in self.sel_img_names
-            ]
+            kp_paths = [f"{self.track_dirs[i]}/{x}_keypoints.json" for x in self.sel_img_names]
             # (T, J, 3) (x, y, conf) - with interpolation for missing frames
             joints2d_data = load_keypoints_with_interp(kp_paths, interp=interp_input)
             # print('joints2d_data: ', joints2d_data.shape)
@@ -233,27 +223,21 @@ class MultiPeopleDataset(Dataset):
             # raise ValueError
             # Discard bad ViTPose detections
             joints2d_data[:, :, 2] = 1.0
-            joints2d_data[
-                np.repeat(joints2d_data[:, :, [2]] < MIN_KEYP_CONF, 3, axis=2)
-            ] = 0
+            joints2d_data[np.repeat(joints2d_data[:, :, [2]] < MIN_KEYP_CONF, 3, axis=2)] = 0
             # Set all confidence values to 1.0 for optimization
             data_out["joints2d"].append(joints2d_data)
 
             # load single image mano predictions
-            pred_paths = [
-                f"{self.track_dirs[i]}/{x}_mano.json" for x in self.sel_img_names
-            ]
-            pose_init, orient_init, trans_init, betas_init, is_right = load_mano_preds(
-                pred_paths, tid=tid, interp=interp_input
-            )
+            pred_paths = [f"{self.track_dirs[i]}/{x}_mano.json" for x in self.sel_img_names]
+            pose_init, orient_init, trans_init, betas_init, is_right = load_mano_preds(pred_paths, tid=tid, interp=interp_input)
 
-            n_joints = len(MANO_JOINTS) - 1 # 15
+            n_joints = len(MANO_JOINTS) - 1  # 15
             data_out["init_body_pose"].append(pose_init)
             data_out["init_body_shape"].append(betas_init)
             data_out["init_root_orient"].append(orient_init)
             data_out["init_trans"].append(trans_init)
             data_out['is_right'].append(is_right)
-            
+
             # DEBUG: Print hand type for each track
             print(f"DEBUG: Track {i} (tid={tid}): is_right={is_right[0] if len(is_right) > 0 else 'empty'}, {len(pred_paths)} frames")
 
@@ -274,9 +258,7 @@ class MultiPeopleDataset(Dataset):
         # single frame predictions
         obs_data["init_body_pose"] = torch.Tensor(self.data_dict["init_body_pose"][idx])
         obs_data["init_body_shape"] = torch.Tensor(self.data_dict["init_body_shape"][idx])
-        obs_data["init_root_orient"] = torch.Tensor(
-            self.data_dict["init_root_orient"][idx]
-        )
+        obs_data["init_root_orient"] = torch.Tensor(self.data_dict["init_root_orient"][idx])
         obs_data["init_trans"] = torch.Tensor(self.data_dict["init_trans"][idx])
         obs_data["is_right"] = torch.Tensor(self.data_dict["is_right"][idx])
 
@@ -287,13 +269,9 @@ class MultiPeopleDataset(Dataset):
         obs_data["vis_mask"] = torch.Tensor(self.data_dict["vis_mask"][idx])
 
         # the frames used in this subsequence
-        obs_data["seq_interval"] = torch.Tensor(list(self.seq_intervals[idx])).to(
-            torch.int
-        )
+        obs_data["seq_interval"] = torch.Tensor(list(self.seq_intervals[idx])).to(torch.int)
         # the start and end interval of available keypoints
-        obs_data["track_interval"] = torch.Tensor(
-            self.data_dict["track_interval"][idx]
-        ).int()
+        obs_data["track_interval"] = torch.Tensor(self.data_dict["track_interval"][idx]).int()
 
         print(len(self.track_ids), self.track_ids[idx], obs_data["is_right"].shape, obs_data["seq_interval"].shape)
 
@@ -312,9 +290,7 @@ class MultiPeopleDataset(Dataset):
         if self.split_cameras:
             data_interval = self.data_start, self.data_end
         track_interval = self.start_idx, self.end_idx
-        self.cam_data = CameraData(
-            cam_dir, self.seq_len, self.img_size, self.is_static, data_interval, track_interval
-        )
+        self.cam_data = CameraData(cam_dir, self.seq_len, self.img_size, self.is_static, data_interval, track_interval)
 
     def get_camera_data(self):
         if self.cam_data is None:
@@ -323,9 +299,8 @@ class MultiPeopleDataset(Dataset):
 
 
 class CameraData(object):
-    def __init__(
-        self, cam_dir, seq_len, img_size, is_static, data_interval=[0, -1], track_interval=[0, -1]
-    ):
+
+    def __init__(self, cam_dir, seq_len, img_size, is_static, data_interval=[0, -1], track_interval=[0, -1]):
         self.img_size = img_size
         self.cam_dir = cam_dir
         self.is_static = is_static
@@ -343,7 +318,7 @@ class CameraData(object):
 
         self.sidx, self.eidx = sidx + data_start, eidx + data_start
         print(self.sidx, self.eidx, data_start, data_end, data_interval, track_interval)
-#
+        #
         self.seq_len = self.eidx - self.sidx
 
         self.load_data()
@@ -362,17 +337,16 @@ class CameraData(object):
             #             R0, t0 = invert_camera(cam_R[sidx], cam_t[sidx])
             #             self.cam_R = torch.einsum("ij,...jk->...ik", R0, cam_R[sidx:eidx])
             #             self.cam_t = t0 + torch.einsum("ij,...j->...i", R0, cam_t[sidx:eidx])
-#             t0 = -cam_t[sidx:eidx].mean(dim=0) + torch.randn(3) * 0.1
-            t0 = -cam_t[sidx:sidx+1] + torch.randn(3) * 0.1
+            #             t0 = -cam_t[sidx:eidx].mean(dim=0) + torch.randn(3) * 0.1
+            t0 = -cam_t[sidx:sidx + 1] + torch.randn(3) * 0.1
             self.cam_R = cam_R[sidx:eidx]
-            self.cam_t = cam_t[sidx:eidx] - t0
+            # self.cam_t = cam_t[sidx:eidx] - t0
+            self.cam_t = cam_t[sidx:eidx]
         else:
             # raise ValueError
             Logger.log(f"WARNING: {fpath} does not exist, using static cameras...")
             default_focal = 0.5 * (img_h + img_w)
-            self.intrins = torch.tensor(
-                [default_focal, default_focal, img_w / 2, img_h / 2]
-            )[None].repeat(self.seq_len, 1)
+            self.intrins = torch.tensor([default_focal, default_focal, img_w / 2, img_h / 2])[None].repeat(self.seq_len, 1)
 
             self.cam_R = torch.eye(3)[None].repeat(self.seq_len, 1, 1)
             self.cam_t = torch.zeros(self.seq_len, 3)

@@ -1,11 +1,11 @@
 import os
-import numpy as np
 import subprocess
-import cv2
 
+import cv2
+import numpy as np
 import preproc.launch_hamer as hamer
-from preproc.launch_slam import split_frames_shots, get_command, check_intrins
-from preproc.extract_frames import video_to_frames, split_frame
+from preproc.extract_frames import split_frame, video_to_frames
+from preproc.launch_slam import check_intrins, get_command, split_frames_shots
 
 
 def is_nonempty(d):
@@ -69,27 +69,26 @@ def load_vipe_cameras(vipe_dir, seq_name, img_dir, start=0, end=-1):
     # Load VIPE pose and intrinsics
     vipe_pose_path = os.path.join(vipe_dir, "pose", f"{seq_name}.npz")
     vipe_intrins_path = os.path.join(vipe_dir, "intrinsics", f"{seq_name}.npz")
-    
+
     if not os.path.exists(vipe_pose_path):
         raise FileNotFoundError(f"VIPE pose file not found: {vipe_pose_path}")
     if not os.path.exists(vipe_intrins_path):
         raise FileNotFoundError(f"VIPE intrinsics file not found: {vipe_intrins_path}")
-    
+
     print(f"Loading VIPE cameras from {vipe_dir}")
     pose_data = np.load(vipe_pose_path)
     c2w = pose_data['data']  # (N, 4, 4) camera-to-world
     pose_inds = pose_data['inds']  # (N,) frame indices
-    
+
     intrins_data = np.load(vipe_intrins_path)
     intrins = intrins_data['data']  # (N, 4) [fx, fy, cx, cy]
     intrins_inds = intrins_data['inds']  # (N,) frame indices
-    
+
     # Verify indices match
     assert np.array_equal(pose_inds, intrins_inds), "Pose and intrinsics indices don't match!"
-    
+
     # Get image size from first image
-    image_files = sorted([f for f in os.listdir(img_dir) 
-                         if f.endswith(('.png', '.jpg', '.jpeg'))])
+    image_files = sorted([f for f in os.listdir(img_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
     if not image_files:
         # Infer from intrinsics (cx, cy should be roughly at center)
         img_width = int(intrins[0, 2] * 2)
@@ -100,23 +99,23 @@ def load_vipe_cameras(vipe_dir, seq_name, img_dir, start=0, end=-1):
         img = cv2.imread(img_path)
         img_height, img_width = img.shape[:2]
         print(f"Got image size from images: {img_width}x{img_height}")
-    
+
     # Select frames based on start/end
     if end < 0:
         end = len(c2w)
     c2w = c2w[start:end]
     intrins = intrins[start:end]
-    
+
     # Convert camera-to-world to world-to-camera
     w2c = np.linalg.inv(c2w)
-    
+
     # Add width and height to intrinsics
     N = len(w2c)
     intrins_full = np.zeros((N, 6), dtype=np.float32)
     intrins_full[:, :4] = intrins
     intrins_full[:, 4] = img_width
     intrins_full[:, 5] = img_height
-    
+
     print(f"Loaded {N} VIPE camera poses")
     return w2c, intrins_full
 
@@ -131,14 +130,14 @@ def save_vipe_cameras_as_droid(output_dir, w2c, intrins_full):
         intrins_full: (N, 6) intrinsics [fx, fy, cx, cy, W, H]
     """
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Extract parameters
     W, H = intrins_full[0, 4], intrins_full[0, 5]
     focal = intrins_full[:, :2].mean()
-    
+
     print(f"Saving VIPE cameras to {output_dir}")
     print(f"Image size: {int(W)}x{int(H)}, focal: {focal:.2f}")
-    
+
     # Save cameras.npz (main format used by Dyn-HaMR)
     np.savez(
         f"{output_dir}/cameras.npz",
@@ -166,24 +165,48 @@ def run_vipe(video_path, vipe_dir, vipe_root):
     print(f"Running VIPE on {video_path}")
     print(f"VIPE root: {vipe_root}")
     print(f"Results will be saved to: {vipe_dir}")
-    
+
+    # 获取当前的 CUDA_VISIBLE_DEVICES（从父进程继承）
+    cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+    if cuda_visible is not None:
+        print(f"Using CUDA_VISIBLE_DEVICES={cuda_visible} for VIPE")
+
     # Build VIPE command with proper conda activation
     # We need to source conda.sh first to make conda activate work in subprocess
     conda_sh = os.path.expanduser("~/miniconda3/etc/profile.d/conda.sh")
     if not os.path.exists(conda_sh):
         conda_sh = os.path.expanduser("~/anaconda3/etc/profile.d/conda.sh")
-    
-    cmd = f"source {conda_sh} && conda activate vipe && cd {vipe_root} && vipe infer {video_path}"
-    
+
+    # 在命令中显式设置 CUDA_VISIBLE_DEVICES，确保 VIPE 能看到 GPU
+    if cuda_visible is not None:
+        cmd = f"source {conda_sh} && conda activate vipe && cd {vipe_root} && export CUDA_VISIBLE_DEVICES={cuda_visible} && export TORCH_HOME=$(pwd)/torch_cache && export HF_HOME=$(pwd)/hf_cache && vipe infer {video_path}"
+    else:
+        cmd = f"source {conda_sh} && conda activate vipe && cd {vipe_root} && export TORCH_HOME=$(pwd)/torch_cache && export HF_HOME=$(pwd)/hf_cache && vipe infer {video_path}"
+
     print(f"Executing: {cmd}")
-    out = subprocess.call(cmd, shell=True, executable="/bin/bash")
-    
+
+    # 传递环境变量，确保子进程能继承
+    env = os.environ.copy()
+    out = subprocess.call(cmd, shell=True, executable="/bin/bash", env=env)
+
     if out != 0:
         print(f"WARNING: VIPE failed with exit code {out}")
     else:
         print(f"✓ VIPE completed successfully")
-    
+
     return out
+
+
+def _copy_vipe_results(src_vipe_dir, dst_vipe_dir, seq):
+    """Copy VIPE results from src to dst for the given sequence."""
+    import shutil
+    for sub in ("pose", "intrinsics"):
+        src = os.path.join(src_vipe_dir, sub, f"{seq}.npz")
+        dst = os.path.join(dst_vipe_dir, sub, f"{seq}.npz")
+        if os.path.exists(src) and not os.path.exists(dst):
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+            print(f"Copied VIPE result: {src} -> {dst}")
 
 
 def preprocess_cameras(cfg, overwrite=False):
@@ -194,60 +217,63 @@ def preprocess_cameras(cfg, overwrite=False):
     # Check if we should use VIPE instead of DROID-SLAM
     use_vipe = cfg.get("use_vipe", False)
     vipe_dir = cfg.get("vipe_dir", None)
-    
+
     if use_vipe and vipe_dir is not None:
+        # vipe_root: VIPE installation directory (separate from where results are stored)
+        # Falls back to parent of vipe_dir for backward compatibility
+        vipe_root = cfg.get("vipe_root", os.path.dirname(vipe_dir))
+        default_vipe_results = os.path.join(vipe_root, "vipe_results")
+
         # Check if VIPE results exist for this sequence
         vipe_pose_path = os.path.join(vipe_dir, "pose", f"{cfg.seq}.npz")
         vipe_intrins_path = os.path.join(vipe_dir, "intrinsics", f"{cfg.seq}.npz")
-        
-        # If VIPE results don't exist, run VIPE
+
+        # If not at per-video location, check the VIPE installation's default output dir
+        if not (os.path.exists(vipe_pose_path) and os.path.exists(vipe_intrins_path)):
+            _copy_vipe_results(default_vipe_results, vipe_dir, cfg.seq)
+
+        # If still not found, run VIPE
         if not (os.path.exists(vipe_pose_path) and os.path.exists(vipe_intrins_path)):
             print(f"VIPE results not found for sequence '{cfg.seq}', running VIPE...")
-            
-            # Get VIPE root directory (parent of vipe_dir) and video path
-            vipe_root = os.path.dirname(vipe_dir)
             video_path = cfg.get("src_path", None)
-            
+
             if video_path is None or not os.path.exists(video_path):
-                raise FileNotFoundError(
-                    f"Video path not found: {video_path}\n"
-                    f"Cannot run VIPE. Please provide a valid 'src_path' in your config."
-                )
-            
-            # Run VIPE
+                raise FileNotFoundError(f"Video path not found: {video_path}\n"
+                                        f"Cannot run VIPE. Please provide a valid 'src_path' in your config.")
+
+            # Run VIPE (outputs to {vipe_root}/vipe_results/ by default)
             out = run_vipe(video_path, vipe_dir, vipe_root)
             if out != 0:
-                raise RuntimeError(
-                    f"VIPE failed with exit code {out}\n"
-                    f"Please check VIPE installation and try running manually:\n"
-                    f"  conda activate vipe\n"
-                    f"  cd {vipe_root}\n"
-                    f"  vipe infer {video_path}"
-                )
-        
+                raise RuntimeError(f"VIPE failed with exit code {out}\n"
+                                   f"Please check VIPE installation and try running manually:\n"
+                                   f"  conda activate vipe\n"
+                                   f"  cd {vipe_root}\n"
+                                   f"  vipe infer {video_path}")
+
+            # Copy from VIPE's default output location to per-video location
+            _copy_vipe_results(default_vipe_results, vipe_dir, cfg.seq)
+
         # Load VIPE results (after potentially running VIPE)
         if not (os.path.exists(vipe_pose_path) and os.path.exists(vipe_intrins_path)):
-            raise FileNotFoundError(
-                f"VIPE results not found after execution:\n"
-                f"  Pose: {vipe_pose_path}\n"
-                f"  Intrinsics: {vipe_intrins_path}\n"
-                f"VIPE may have failed silently. Please check VIPE logs."
-            )
-        
+            raise FileNotFoundError(f"VIPE results not found after execution:\n"
+                                    f"  Pose: {vipe_pose_path}\n"
+                                    f"  Intrinsics: {vipe_intrins_path}\n"
+                                    f"VIPE may have failed silently. Please check VIPE logs.")
+
         print(f"USING VIPE CAMERAS FROM {vipe_dir}")
         img_dir = cfg.sources.images
         map_dir = cfg.sources.cameras
-        
+
         # Get frame range
         subseqs, shot_idcs = split_frames_shots(cfg.sources.images, cfg.sources.shots)
         shot_idx = np.where(shot_idcs == cfg.shot_idx)[0][0]
         start, end = subseqs[shot_idx]
-        
+
         if not cfg.split_cameras:
             # only run on specified segment within shot
             end = start + cfg.end_idx
             start = start + cfg.start_idx
-        
+
         # Load and convert VIPE cameras
         w2c, intrins_full = load_vipe_cameras(vipe_dir, cfg.seq, img_dir, start, end)
         save_vipe_cameras_as_droid(map_dir, w2c, intrins_full)
