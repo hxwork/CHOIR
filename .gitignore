@@ -1,5 +1,5 @@
 # Local input videos and generated outputs
-data/
+/data/
 output/
 rendering/
 
