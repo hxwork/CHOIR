@@ -1,6 +1,7 @@
 type: video
 split: custom
-root: /data/home/zy3023/code/hand/Dyn-HaMR/test  # put your videos in root/videos/vid.mp4
+# Defaults assume launching from dyn-hamr/. Override data.root on the CLI for portability.
+root: ../../../output
 video_dir: videos
 seq: demo1
 ext: mp4

@@ -1,10 +1,12 @@
 type: video
 split: custom
-root: /mlp_vepfs/share/hpl/project/code/Dyn_HaMR_new/test  # put your videos in root/videos/vid.mp4
+# Defaults assume launching from dyn-hamr/. batch_test_videos.py overrides with abs paths.
+# Layout: <root>/<video_id>/inputs/video.mp4 ; Hydra writes to <root>/<video_id>/stage1/dynhamr/
+root: ../../../output
 video_dir: videos
 seq: prod1
 ext: mp4
-src_path: ${data.root}/${data.video_dir}/${data.seq}.${data.ext}
+src_path: ${data.root}/${data.video_dir}/inputs/video.${data.ext}
 frame_opts:
   ext: jpg
   fps: 25
@@ -18,14 +20,13 @@ end_idx: -1
 split_cameras: True
 name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}-${data.start_idx}-${data.end_idx}
 sources:
-  images: ${data.root}/${data.video_dir}/dynhamr/images
-  cameras: ${data.root}/${data.video_dir}/dynhamr/cameras/shot-${data.shot_idx}
-  tracks: ${data.root}/${data.video_dir}/dynhamr/track_preds/${data.seq}
-  shots: ${data.root}/${data.video_dir}/dynhamr/shot_idcs/${data.seq}.json
+  images: ${data.root}/${data.video_dir}/stage1/dynhamr/images
+  cameras: ${data.root}/${data.video_dir}/stage1/dynhamr/cameras/shot-${data.shot_idx}
+  tracks: ${data.root}/${data.video_dir}/stage1/dynhamr/track_preds/${data.seq}
+  shots: ${data.root}/${data.video_dir}/stage1/dynhamr/shot_idcs/${data.seq}.json
   video_dir: ${data.root}/${data.video_dir}
 
 # VIPE-specific options
 use_vipe: True
-vipe_dir: ${data.root}/${data.video_dir}/dynhamr/vipe_results
-vipe_root: /vepfs_default/chanxueyan/lhp/xh/code/Dyn_HaMR_new/third-party/vipe
-
+vipe_dir: ${data.root}/${data.video_dir}/stage1/dynhamr/vipe_results
+vipe_root: ../third-party/vipe

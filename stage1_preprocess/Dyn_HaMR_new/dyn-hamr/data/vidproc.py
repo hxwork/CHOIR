@@ -166,47 +166,115 @@ def run_vipe(video_path, vipe_dir, vipe_root):
     print(f"VIPE root: {vipe_root}")
     print(f"Results will be saved to: {vipe_dir}")
 
-    # 获取当前的 CUDA_VISIBLE_DEVICES（从父进程继承）
     cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', None)
     if cuda_visible is not None:
         print(f"Using CUDA_VISIBLE_DEVICES={cuda_visible} for VIPE")
 
-    # Build VIPE command with proper conda activation
-    # We need to source conda.sh first to make conda activate work in subprocess
+    # Prefer an explicit env path; otherwise activate a conda env named "vipe".
     conda_sh = os.path.expanduser("~/miniconda3/etc/profile.d/conda.sh")
     if not os.path.exists(conda_sh):
         conda_sh = os.path.expanduser("~/anaconda3/etc/profile.d/conda.sh")
 
-    # 在命令中显式设置 CUDA_VISIBLE_DEVICES，确保 VIPE 能看到 GPU
+    vipe_env = os.environ.get("CHOIR_VIPE_ENV", "vipe")
+
+    # Write VIPE results directly into the per-video output folder.
+    os.makedirs(vipe_dir, exist_ok=True)
+    # Use in-repo torch/hf caches. Do NOT set TRANSFORMERS_CACHE — it breaks the
+    # HF hub layout under HF_HOME/hub (bert-base-uncased etc. become invisible).
+    # Offline + no proxy: use local weights when the network/proxy is unavailable.
+    cache_exports = (
+        "export TORCH_HOME=$(pwd)/torch_cache && "
+        "export HF_HOME=$(pwd)/hf_cache && "
+        "export HF_HUB_OFFLINE=1 && "
+        "export TRANSFORMERS_OFFLINE=1 && "
+        "unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy"
+    )
     if cuda_visible is not None:
-        cmd = f"source {conda_sh} && conda activate vipe && cd {vipe_root} && export CUDA_VISIBLE_DEVICES={cuda_visible} && export TORCH_HOME=$(pwd)/torch_cache && export HF_HOME=$(pwd)/hf_cache && vipe infer {video_path}"
+        cmd = (
+            f"source {conda_sh} && conda activate {vipe_env} && cd {vipe_root} && "
+            f"export CUDA_VISIBLE_DEVICES={cuda_visible} && "
+            f"{cache_exports} && "
+            f"vipe infer {video_path} --output {vipe_dir}"
+        )
     else:
-        cmd = f"source {conda_sh} && conda activate vipe && cd {vipe_root} && export TORCH_HOME=$(pwd)/torch_cache && export HF_HOME=$(pwd)/hf_cache && vipe infer {video_path}"
+        cmd = (
+            f"source {conda_sh} && conda activate {vipe_env} && cd {vipe_root} && "
+            f"{cache_exports} && "
+            f"vipe infer {video_path} --output {vipe_dir}"
+        )
 
     print(f"Executing: {cmd}")
 
-    # 传递环境变量，确保子进程能继承
     env = os.environ.copy()
     out = subprocess.call(cmd, shell=True, executable="/bin/bash", env=env)
 
     if out != 0:
         print(f"WARNING: VIPE failed with exit code {out}")
     else:
-        print(f"✓ VIPE completed successfully")
+        print("VIPE completed successfully")
 
     return out
 
 
-def _copy_vipe_results(src_vipe_dir, dst_vipe_dir, seq):
-    """Copy VIPE results from src to dst for the given sequence."""
+def _copy_vipe_results(src_vipe_dir, dst_vipe_dir, seq, alt_stems=()):
+    """Copy VIPE results from src to dst for the given sequence.
+
+    VIPE names outputs after the input video stem (e.g. inputs/video.mp4 -> video.npz).
+    Dyn-HaMR expects {seq}.npz, so also try alt_stems and normalize into {seq}.*.
+    """
     import shutil
+
+    stems = (seq,) + tuple(s for s in alt_stems if s and s != seq)
     for sub in ("pose", "intrinsics"):
-        src = os.path.join(src_vipe_dir, sub, f"{seq}.npz")
         dst = os.path.join(dst_vipe_dir, sub, f"{seq}.npz")
-        if os.path.exists(src) and not os.path.exists(dst):
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
-            print(f"Copied VIPE result: {src} -> {dst}")
+        if os.path.exists(dst):
+            continue
+        for stem in stems:
+            src = os.path.join(src_vipe_dir, sub, f"{stem}.npz")
+            if os.path.exists(src):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+                print(f"Copied VIPE result: {src} -> {dst}")
+                break
+
+
+def _normalize_vipe_seq_names(vipe_dir, seq, alt_stems=()):
+    """Ensure pose/intrinsics (and sibling artifacts) exist under {seq}.* names."""
+    import shutil
+
+    if not os.path.isdir(vipe_dir):
+        return
+    stems = tuple(s for s in alt_stems if s and s != seq)
+    if not stems:
+        return
+
+    for sub in ("pose", "intrinsics", "depth", "rgb", "mask", "vipe"):
+        sub_dir = os.path.join(vipe_dir, sub)
+        if not os.path.isdir(sub_dir):
+            continue
+        for name in os.listdir(sub_dir):
+            stem, ext = os.path.splitext(name)
+            # Handle names like video_camera.txt / video_info.pkl
+            base = stem
+            suffix = ""
+            for alt in stems:
+                if stem == alt:
+                    break
+                if stem.startswith(alt + "_"):
+                    suffix = stem[len(alt) :]
+                    base = alt
+                    break
+            else:
+                continue
+            if base not in stems:
+                continue
+            dst_name = f"{seq}{suffix}{ext}"
+            src_path = os.path.join(sub_dir, name)
+            dst_path = os.path.join(sub_dir, dst_name)
+            if os.path.exists(dst_path):
+                continue
+            shutil.copy2(src_path, dst_path)
+            print(f"Normalized VIPE name: {src_path} -> {dst_path}")
 
 
 def preprocess_cameras(cfg, overwrite=False):
@@ -222,36 +290,50 @@ def preprocess_cameras(cfg, overwrite=False):
         # vipe_root: VIPE installation directory (separate from where results are stored)
         # Falls back to parent of vipe_dir for backward compatibility
         vipe_root = cfg.get("vipe_root", os.path.dirname(vipe_dir))
+        vipe_root = os.path.abspath(vipe_root)
+        vipe_dir = os.path.abspath(vipe_dir)
         default_vipe_results = os.path.join(vipe_root, "vipe_results")
+        video_path = cfg.get("src_path", None)
+        video_stem = (
+            os.path.splitext(os.path.basename(video_path))[0]
+            if video_path
+            else "video"
+        )
+        alt_stems = (video_stem, "video")
 
         # Check if VIPE results exist for this sequence
         vipe_pose_path = os.path.join(vipe_dir, "pose", f"{cfg.seq}.npz")
         vipe_intrins_path = os.path.join(vipe_dir, "intrinsics", f"{cfg.seq}.npz")
 
+        # Prefer already-written per-video outputs named after the video stem.
+        _normalize_vipe_seq_names(vipe_dir, cfg.seq, alt_stems=alt_stems)
+
         # If not at per-video location, check the VIPE installation's default output dir
         if not (os.path.exists(vipe_pose_path) and os.path.exists(vipe_intrins_path)):
-            _copy_vipe_results(default_vipe_results, vipe_dir, cfg.seq)
+            _copy_vipe_results(default_vipe_results, vipe_dir, cfg.seq, alt_stems=alt_stems)
+            _normalize_vipe_seq_names(vipe_dir, cfg.seq, alt_stems=alt_stems)
 
         # If still not found, run VIPE
         if not (os.path.exists(vipe_pose_path) and os.path.exists(vipe_intrins_path)):
             print(f"VIPE results not found for sequence '{cfg.seq}', running VIPE...")
-            video_path = cfg.get("src_path", None)
 
             if video_path is None or not os.path.exists(video_path):
                 raise FileNotFoundError(f"Video path not found: {video_path}\n"
                                         f"Cannot run VIPE. Please provide a valid 'src_path' in your config.")
 
-            # Run VIPE (outputs to {vipe_root}/vipe_results/ by default)
             out = run_vipe(video_path, vipe_dir, vipe_root)
             if out != 0:
-                raise RuntimeError(f"VIPE failed with exit code {out}\n"
-                                   f"Please check VIPE installation and try running manually:\n"
-                                   f"  conda activate vipe\n"
-                                   f"  cd {vipe_root}\n"
-                                   f"  vipe infer {video_path}")
+                raise RuntimeError(
+                    f"VIPE failed with exit code {out}\n"
+                    f"Please check VIPE installation and try running manually:\n"
+                    f"  conda activate ${{CHOIR_VIPE_ENV:-vipe}}\n"
+                    f"  cd {vipe_root}\n"
+                    f"  vipe infer {video_path} --output {vipe_dir}"
+                )
 
-            # Copy from VIPE's default output location to per-video location
-            _copy_vipe_results(default_vipe_results, vipe_dir, cfg.seq)
+            # Copy from VIPE's default output location if it still wrote there
+            _copy_vipe_results(default_vipe_results, vipe_dir, cfg.seq, alt_stems=alt_stems)
+            _normalize_vipe_seq_names(vipe_dir, cfg.seq, alt_stems=alt_stems)
 
         # Load VIPE results (after potentially running VIPE)
         if not (os.path.exists(vipe_pose_path) and os.path.exists(vipe_intrins_path)):
